@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -14,7 +15,6 @@ import (
 
 const faqsPath = "data/FAQs_Parachute_SA_Guatemala_2026.txt"
 const groqBaseURL = "https://api.groq.com/openai/v1"
-const testQuestion = "¿Cuándo y dónde se llevará a cabo el evento?"
 
 func main() {
 	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -45,19 +45,7 @@ func main() {
 		option.WithBaseURL(groqBaseURL),
 	)
 
-	answer, err := queryAgent(
-		context.Background(),
-		client,
-		openai.ChatModel(modelName),
-		faqs,
-		testQuestion,
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error consultando al agente: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Agente: %s\n", answer)
+	runInteractiveLoop(context.Background(), client, openai.ChatModel(modelName), faqs)
 }
 
 func loadFAQs(path string) (string, error) {
@@ -72,6 +60,45 @@ func loadFAQs(path string) (string, error) {
 	}
 
 	return faqs, nil
+}
+
+func runInteractiveLoop(
+	ctx context.Context,
+	client openai.Client,
+	model openai.ChatModel,
+	faqs string,
+) {
+	fmt.Println("Agente de FAQs de Parachute S.A.")
+	fmt.Println("Responde preguntas sobre el evento. Escribe Bye o presiona Ctrl-C para salir.")
+
+	scanner := bufio.NewScanner(os.Stdin)
+	for {
+		fmt.Print("Tú: ")
+		if !scanner.Scan() {
+			break
+		}
+
+		question := strings.TrimSpace(scanner.Text())
+		if question == "" {
+			continue
+		}
+		if strings.EqualFold(question, "bye") {
+			fmt.Println("Agente: Hasta luego.")
+			return
+		}
+
+		answer, err := queryAgent(ctx, client, model, faqs, question)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Agente: no pude responder esa pregunta en este momento. Intenta de nuevo.")
+			continue
+		}
+
+		fmt.Printf("Agente: %s\n", answer)
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "error leyendo entrada: %v\n", err)
+	}
 }
 
 func queryAgent(
