@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,6 +123,32 @@ func TestLoadFAQs(t *testing.T) {
 	})
 }
 
+func TestReadRequiredEnv(t *testing.T) {
+	t.Run("present", func(t *testing.T) {
+		t.Setenv("GROQ_API_KEY", " value ")
+
+		got, err := readRequiredEnv("GROQ_API_KEY", "missing")
+		if err != nil {
+			t.Fatalf("readRequiredEnv() error = %v", err)
+		}
+		if got != "value" {
+			t.Fatalf("readRequiredEnv() = %q, want %q", got, "value")
+		}
+	})
+
+	t.Run("missing", func(t *testing.T) {
+		t.Setenv("GROQ_MODEL", "   ")
+
+		_, err := readRequiredEnv("GROQ_MODEL", "mensaje claro")
+		if err == nil {
+			t.Fatal("readRequiredEnv() error = nil, want error")
+		}
+		if err.Error() != "mensaje claro" {
+			t.Fatalf("readRequiredEnv() error = %q, want %q", err.Error(), "mensaje claro")
+		}
+	})
+}
+
 func TestBuildPrompt(t *testing.T) {
 	t.Parallel()
 
@@ -235,4 +263,38 @@ func TestExtractAnswer(t *testing.T) {
 			t.Fatalf("extractAnswer() = %q, want %q", got, "Respuesta útil")
 		}
 	})
+}
+
+func TestFriendlyQueryError(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "deadline", err: context.DeadlineExceeded, want: "la consulta tardó demasiado y se canceló. Intenta de nuevo."},
+		{name: "canceled", err: context.Canceled, want: "la consulta se canceló. Intenta de nuevo."},
+		{name: "no choices", err: errors.New("consulta a Groq falló: no se recibieron choices"), want: "Groq no devolvió una respuesta útil. Intenta de nuevo."},
+		{name: "empty response", err: errors.New("consulta a Groq falló: respuesta vacía"), want: "Groq devolvió una respuesta vacía. Intenta de nuevo."},
+		{name: "generic", err: errors.New("algo inesperado"), want: "no pude responder esa pregunta en este momento. Intenta de nuevo."},
+		{name: "nil", err: nil, want: "no pude responder esa pregunta en este momento. Intenta de nuevo."},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var err error
+			if tc.err != nil {
+				err = tc.err
+			}
+
+			got := friendlyQueryError(err)
+			if got != tc.want {
+				t.Fatalf("friendlyQueryError() = %q, want %q", got, tc.want)
+			}
+		})
+	}
 }

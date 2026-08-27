@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	openai "github.com/openai/openai-go/v3"
@@ -20,6 +21,7 @@ const promptDelimiter = "---"
 const promptFAQsLabel = "DOCUMENTO DE FAQS:"
 const promptQuestionLabel = "PREGUNTA DEL USUARIO:"
 const byeCommand = "bye"
+const queryTimeout = 60 * time.Second
 
 func main() {
 	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -148,9 +150,11 @@ func runInteractiveLoop(
 			return
 		}
 
-		answer, err := queryAgent(ctx, client, model, faqs, question)
+		queryCtx, cancel := context.WithTimeout(ctx, queryTimeout)
+		answer, err := queryAgent(queryCtx, client, model, faqs, question)
+		cancel()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Agente: no pude responder esa pregunta en este momento. Intenta de nuevo.")
+			fmt.Fprintln(os.Stderr, "Agente:", friendlyQueryError(err))
 			continue
 		}
 
@@ -213,4 +217,29 @@ func extractAnswer(resp *openai.ChatCompletion) (string, error) {
 	}
 
 	return answer, nil
+}
+
+func friendlyQueryError(err error) string {
+	if err == nil {
+		return "no pude responder esa pregunta en este momento. Intenta de nuevo."
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "la consulta tardó demasiado y se canceló. Intenta de nuevo."
+	}
+	if errors.Is(err, context.Canceled) {
+		return "la consulta se canceló. Intenta de nuevo."
+	}
+
+	message := err.Error()
+	switch {
+	case strings.Contains(message, "no se recibieron choices"):
+		return "Groq no devolvió una respuesta útil. Intenta de nuevo."
+	case strings.Contains(message, "respuesta vacía"):
+		return "Groq devolvió una respuesta vacía. Intenta de nuevo."
+	case strings.Contains(message, "consulta a Groq falló"):
+		return "no pude consultar a Groq en este momento. Intenta de nuevo."
+	default:
+		return "no pude responder esa pregunta en este momento. Intenta de nuevo."
+	}
 }
