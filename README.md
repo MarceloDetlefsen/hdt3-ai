@@ -51,6 +51,9 @@ Cada pregunta se envía de forma independiente con el documento completo como co
 ├── README.md
 ├── data/
 │   └── FAQs_Parachute_SA_Guatemala_2026.txt
+├── media/
+│   ├── Funcionamiento.gif
+│   └── Funcionamiento.mp4
 ├── go.mod
 ├── go.sum
 ├── main.go
@@ -162,9 +165,8 @@ go build ./...
 
 ## Video de demostración
 
-...
+![Funcionamiento](media/Funcionamiento.gif)
 
 ## Autor
 
 Marcelo Detlefsen - 24554
-
